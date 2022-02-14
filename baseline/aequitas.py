@@ -9,12 +9,12 @@ import tensorflow as tf
 from tensorflow.python.platform import flags
 import copy
 
-from adf_data.census import census_data
-from adf_data.credit import credit_data
-from adf_data.bank import bank_data
-from adf_utils.config import census, credit, bank
-from adf_model.tutorial_models import dnn
-from adf_utils.utils_tf import model_argmax
+from data.census import census_data
+from data.credit import credit_data
+from data.bank import bank_data
+from utils.config import census, credit, bank
+from model.tutorial_models import dnn
+from utils.utils_tf import model_argmax
 
 from six.moves import xrange
 
