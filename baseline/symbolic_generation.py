@@ -14,14 +14,14 @@ from z3 import *
 import os
 import copy
 
-from adf_utils.config import census, credit, bank
-from adf_baseline.lime import lime_tabular
-from adf_model.tutorial_models import dnn
-from adf_data.census import census_data
-from adf_data.credit import credit_data
-from adf_data.bank import bank_data
-from adf_utils.utils_tf import model_argmax
-from adf_tutorial.utils import cluster
+from utils.config import census, credit, bank
+from baseline.lime import lime_tabular
+from model.tutorial_models import dnn
+from data.census import census_data
+from data.credit import credit_data
+from data.bank import bank_data
+from utils.utils_tf import model_argmax
+from tutorial.utils import cluster
 
 FLAGS = flags.FLAGS
 
