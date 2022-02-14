@@ -2,16 +2,16 @@ import numpy as np
 import sys
 sys.path.append("../")
 
-# import tensorflow as tf
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
+# import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
 
 from tensorflow.python.platform import flags
-from adf_data.census import census_data
-from adf_data.bank import bank_data
-from adf_data.credit import credit_data
-from adf_utils.utils_tf import model_train, model_eval
-from adf_model.tutorial_models import dnn
+from data.census import census_data
+from data.bank import bank_data
+from data.credit import credit_data
+from utils.utils_tf import model_train, model_eval
+from model.tutorial_models import dnn
 
 FLAGS = flags.FLAGS
 
