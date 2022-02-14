@@ -14,15 +14,15 @@ sys.path.append("../")
 sys.path.append("../../")
 
 # from adf_model.model_operation import model_load, model_eval
-from adf_utils.config import census, credit, bank
-from adf_utils.utils_tf import model_train, model_eval
-from adf_baseline.lime import lime_tabular
-from adf_model.tutorial_models import dnn
-from adf_data.census import census_data
-from adf_data.credit import credit_data
-from adf_data.bank import bank_data
-from adf_utils.utils_tf import model_argmax
-from adf_tutorial.utils import cluster
+from utils.config import census, credit, bank
+from utils.utils_tf import model_train, model_eval
+from baseline.lime import lime_tabular
+from model.tutorial_models import dnn
+from data.census import census_data
+from data.credit import credit_data
+from data.bank import bank_data
+from utils.utils_tf import model_argmax
+from tutorial.utils import cluster
 # from adf_data.data import get_data, get_shape
 # from guardai_util.configs import path
 
