@@ -12,20 +12,20 @@ import sys
 sys.path.append("../")
 from sklearn.cluster import KMeans
 
-# import tensorflow as tf
-import tensorflow.compat.v1 as tf
-tf.disable_v2_behavior()
+import tensorflow as tf
+# import tensorflow.compat.v1 as tf
+# tf.disable_v2_behavior()
 
 import numpy as np
 import copy
 
-from adf_data.census import census_data
-from adf_data.credit import credit_data
-from adf_data.bank import bank_data
-from adf_model.tutorial_models import dnn
-from adf_utils.utils_tf import model_prediction, model_argmax
-from adf_utils.config import census, credit, bank
-from adf_tutorial.utils import cluster, gradient_graph
+from data.census import census_data
+from data.credit import credit_data
+from data.bank import bank_data
+from model.tutorial_models import dnn
+from utils.utils_tf import model_prediction, model_argmax
+from utils.config import census, credit, bank
+from tutorial.utils import cluster, gradient_graph
 import itertools
 from sklearn.datasets import load_iris
 import random
