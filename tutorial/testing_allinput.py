@@ -90,17 +90,15 @@ def get_DT_cluster(dataset, cluster_num, feature_set, n):
     # X, Y, input_shape, nb_classes = data[dataset]()
     # print("-->X:", X)
     xx = select_feature(dataset, feature_set, n)
-    # xx = np.array(xx)
+    xx = np.array(xx)
     # print("-->xx:", xx, type(xx), xx.shape)
     clf = KMeans(n_clusters=cluster_num, random_state=2019).fit(xx)
     clusters = [np.where(clf.labels_ == i) for i in range(cluster_num)]
 
     # select the seed input for testing
-    # inputs = seed_test_input(clusters, min(5000, len(xx)), xx)  # 1000
-    inputs = seed_test_input(clusters, len(xx), xx)
+    inputs = seed_test_input(clusters, min(5000, len(xx)), xx)  # 1000
     # print("-->inputs:", inputs)
     return inputs
-    # return xx
 
 
 # Load a CSV file
@@ -161,53 +159,33 @@ def accuracy_dif_label(actual, predicted):
     return all_accuracy
 
 
-def generate_random_data(max_num, conf, feature_set, sess, x, preds):
-    params = conf.params
-    all_data = []
-    while len(all_data) < max_num:
-        data = []
-        tree_data = []
-        for i in range(params):
-            d = random.randint(conf.input_bounds[i][0], conf.input_bounds[i][1])
-            data.append(d)
-        probs = model_prediction(sess, x, preds, np.array([data]))[0]  # n_probs: prediction vector
-        model_label = np.argmax(probs)  # GET index of max value in n_probs
-        for i in feature_set:
-            tree_data.append(data[i-1])
-        tree_data.append(int(model_label))
-        all_data.append(tree_data)
-    return all_data
-
-
 # Evaluate an algorithm using a cross validation split
-def evaluate_algorithm(dataset, algorithm, conf, feature_set, sess, x, preds, *args):  # algorithm: decision tree
-
-    random_test_data = generate_random_data(2000, conf, feature_set, sess, x, preds)
-    print("-->random_test_data:", random_test_data)
-    train_set = list(random_test_data)
-    dif_scores = list()
+def evaluate_algorithm(dataset, algorithm, n_folds, *args):
+    folds = cross_validation_split(dataset, n_folds)
     scores = list()
-    tree_accuracy_time = list()
-    test_set = list()
-    for row in train_set:
-        test_set.append(row[0:-1])
-    start1 = time.clock()
-    print("-->build tree")
-    predicted, tree = algorithm(train_set, test_set, *args)
-    end1 = time.clock()
-    start2 = time.clock()
-    actual = [row[-1] for row in train_set]
-    print("-->actual:", actual)
-    print("-->predicted:", predicted)
-    accuracy = accuracy_metric(actual, predicted)
-    dif_accuracy = accuracy_dif_label(actual, predicted)
-    dif_scores.append(dif_accuracy)
-    scores.append(accuracy)
-    end2 = time.clock()
-    tree_accuracy_time.append(end1 - start1)
-    tree_accuracy_time.append(end2 - start2)
-    return accuracy, dif_accuracy, tree, tree_accuracy_time
-    # return scores, dif_scores, tree, time
+    dif_scores = list()
+    decision_trees = []
+    for fold in folds:
+        # print("-->fold", fold)
+        train_set = list(folds)
+        train_set.remove(fold)
+        train_set = sum(train_set, [])
+        test_set = list()
+        for row in fold:
+            row_copy = list(row)
+            test_set.append(row_copy)
+            row_copy[-1] = None
+        print("-->build tree")
+        predicted, tree = algorithm(train_set, test_set, *args)
+        decision_trees.append(tree)
+        actual = [row[-1] for row in fold]
+        # print("-->actual:", actual)
+        # print("-->predicted:", predicted)
+        accuracy = accuracy_metric(actual, predicted)
+        dif_accuracy = accuracy_dif_label(actual, predicted)
+        dif_scores.append(dif_accuracy)
+        scores.append(accuracy)
+    return scores, dif_scores, decision_trees
 
 
 def gini_index(groups, classes):
@@ -316,7 +294,7 @@ def split(node, max_depth, min_size, depth):
 # Build a decision tree
 def build_tree(train, max_depth, min_size):
     root = get_split(train)
-    print("-->root:")
+    print("-->root:", root)
     split(root, max_depth, min_size, 1)
     return root
 
@@ -563,14 +541,12 @@ def get_cluster(dataset, cluster_num, feature_set):
     return clusters
 
 
-def interpretability(filename, dataset, max_iter, k, f_accuracy, f_time, f_trees):  # k, n_folds
-    # filename, dataset, 10, 2, 3, f_accuracy, f_time, f_trees
+def interpretability(filename, dataset, max_iter, k, n_folds, f_gini, f_accuracy, f_time, f_ci, f_iteration, f_trees):
     data = {"census": census_data, "credit": credit_data, "bank": bank_data}
     data_config = {"census": census, "credit": credit, "bank": bank}
 
     X, Y, input_shape, nb_classes = data[dataset]()
     config = tf.ConfigProto()
-    conf = data_config[dataset]
     config.gpu_options.per_process_gpu_memory_fraction = 0.8
     sess = tf.Session(config=config)
     x = tf.placeholder(tf.float32, shape=input_shape)
@@ -579,8 +555,7 @@ def interpretability(filename, dataset, max_iter, k, f_accuracy, f_time, f_trees
     preds = model(x)
     # print("-->preds ", preds)
     saver = tf.train.Saver()
-    saver_file = "../models/" + dataset + "/test.model"
-    saver.restore(sess, saver_file)
+    saver.restore(sess, "../models/census/test.model")
     grad_0 = gradient_graph(x, preds)
     tfops = tf.sign(grad_0)
 
@@ -597,7 +572,7 @@ def interpretability(filename, dataset, max_iter, k, f_accuracy, f_time, f_trees
         # d_plus = clip(np.array([d]), data_config[dataset_name]).astype("int")
         # d = d_plus[0]
 
-        # clip d in dataset_list
+        #clip d in dataset_list
         # d = clip(d, data_config[dataset])
         # d = list(np.array(d).astype("int"))
 
@@ -618,60 +593,28 @@ def interpretability(filename, dataset, max_iter, k, f_accuracy, f_time, f_trees
     def decision_tree_accuracy(feature_set):
         seed(1)
         original_data = get_DT_cluster(original_dataset, cluster_num, feature_set, params)
-        print("-->original_data (clustered for decision tree):")
-        print(len(original_data), type(original_data), type(original_data[0]))
-        scores, dif_scores, tree, tree_predict_time = evaluate_algorithm(original_data, decision_tree, conf, feature_set, sess, x, preds, max_depth,
-                                                                         min_size)
+        print(len(original_data))
+        scores, dif_scores, trees = evaluate_algorithm(original_data, decision_tree, n_folds, max_depth, min_size)
         # print("-->scores, dif_scores:", scores, dif_scores)
-        # all_scores = []
-        # all_scores.append(scores)
-        # all_scores.append(sum([s[1] for s in dif_scores]) / float(len(dif_scores)))
-        # all_scores.append(sum([s[2] for s in dif_scores]) / float(len(dif_scores)))
+        all_scores = []
+        all_scores.append(scores)
+        all_scores.append(sum([s[1] for s in dif_scores]) / float(len(dif_scores)))
+        all_scores.append(sum([s[2] for s in dif_scores]) / float(len(dif_scores)))
         print('Scores: %s' % scores)
-        print('Mean Accuracy: %.3f%%' % (scores))
-        print('0 Mean Accuracy: %.3f%%' % (dif_scores[1]))
-        print('1 Mean Accuracy: %.3f%%' % (dif_scores[2]))
-        # print('0 Mean Accuracy: %.3f%%' % (sum([s[1] for s in dif_scores]) / float(len(dif_scores))))
-        # print('1 Mean Accuracy: %.3f%%' % (sum([s[2] for s in dif_scores]) / float(len(dif_scores))))
+        print('Mean Accuracy: %.3f%%' % (sum(scores) / float(len(scores))))
+        # print("-->dif_scores:", dif_scores)
+        print('0 Mean Accuracy: %.3f%%' % (sum([s[1] for s in dif_scores]) / float(len(dif_scores))))
+        print('1 Mean Accuracy: %.3f%%' % (sum([s[2] for s in dif_scores]) / float(len(dif_scores))))
 
-        # f_accuracy.write(str(sum(scores) / float(len(scores))) + " ")
-        # f_accuracy.write(str(sum([s[1] for s in dif_scores]) / float(len(dif_scores))) + " ")
-        # f_accuracy.write(str(sum([s[2] for s in dif_scores]) / float(len(dif_scores))) + "\n")
-        f_accuracy.write(str(dif_scores[0]) + " ")
-        f_accuracy.write(str(dif_scores[1]) + " ")
-        f_accuracy.write(str(dif_scores[2]) + "\n")
+        f_accuracy.write(str(sum(scores) / float(len(scores))) + " ")
+        f_accuracy.write(str(sum([s[1] for s in dif_scores]) / float(len(dif_scores))) + " ")
+        f_accuracy.write(str(sum([s[2] for s in dif_scores]) / float(len(dif_scores))) + "\n")
 
-        f_time.write(str(tree_predict_time[0]) + " ")
-        f_time.write(str(tree_predict_time[1]) + "\n")
+        max_index = scores.index(max(scores))
 
-        # max_index = scores.index(max(scores))
+        return all_scores, trees[max_index]
 
-        return scores, tree
-
-    def train_ci(sess, preds, x, condition, clusters, limit, original_dataset, time_ci):
-        basic_label = condition[-1][0]
-        inputs = seed_test_input(clusters, 5000, basic_label, feature_set, condition, original_dataset)
-
-        start_time = time.clock()
-        for num in range(len(inputs)):
-            # print("-->num", num)
-            index = inputs[num]
-            sample = original_dataset[index][:-1]
-            sample = np.array([sample])
-            # print("-->sample", sample)
-
-            # n_probs = model_prediction(sess, x, preds, sample)[0]  # n_probs: prediction vector
-            # n_label = np.argmax(n_probs)  # GET index of max value in n_probs
-
-            n_label = original_dataset[num][-1]
-
-            if n_label != basic_label:
-                end_time = time.clock()
-                time_ci.append(end_time - start_time)
-                return True
-        return False
-
-    def perturbation(sess, preds, x, feature_set, condition, clusters, limit, original_dataset, time_pert):
+    def perturbation(sess, preds, x, feature_set, condition, clusters, limit, original_dataset):
         # grad_0 = gradient_graph(x, preds)
         # print("-->feature_set1:", feature_set)
 
@@ -680,11 +623,11 @@ def interpretability(filename, dataset, max_iter, k, f_accuracy, f_time, f_trees
         inputs = seed_test_input(clusters, limit, basic_label, feature_set, condition, original_dataset)
         # print("-->inputs:", inputs)
 
-        # length = len(inputs)
-        # print("-->length1", length)
+        length = len(inputs)
+        print("-->length1", length)
 
-        # seed_num = 0
-        # ci_num = 0
+        seed_num = 0
+        ci_num = 0
         r = False
         itr_num = 0
         get_CI = False
@@ -693,15 +636,24 @@ def interpretability(filename, dataset, max_iter, k, f_accuracy, f_time, f_trees
 
         # print("-->inputs", inputs)
 
-        start_time = time.clock()
-
         for num in range(len(inputs)):
             # print("-->seed iteration: ", num)
-            # seed_num += 1
+            seed_num += 1
 
             index = inputs[num]
             sample = original_dataset[index][:-1]
             sample = np.array([sample])
+            # sample = X[index:index + 1]
+            # sample = X[index]
+            # print("-->sample:", sample)
+            # probs = model_prediction(sess, x, preds, sample)[0]
+            # label = np.argmax(probs)  # index of maximum probability in prediction
+            # label1 = original_dataset[index][-1]
+            # if label != label1:
+            #     print("label != label1")
+            # if label != basic_label:
+            #     print("label != basic_label")
+            # print("-->basic_label:", label)
 
             for iter in range(max_iter + 1):  # 10
                 # print("--> global iteration:", iter)
@@ -719,7 +671,15 @@ def interpretability(filename, dataset, max_iter, k, f_accuracy, f_time, f_trees
                 # print("-->g_diff", g_diff)
 
                 if np.zeros(input_shape[1]).tolist() == g_diff.tolist():
+                    # print("-->0 gradient")
+                    # zero_gradient_itr += 1
+                    # index = np.random.randint(len(g_diff) - 1)
+                    # g_diff[index] = 1.0*
                     break
+
+                # sample[0] = clip(sample[0] + perturbation_size * g_diff, data_config[dataset]).astype("int")
+                # n_sample = sample.copy()
+                # print("1-->n_sample:", n_sample)
 
                 n_sample = []
                 new_sample = clip(sample[0] + perturbation_size * g_diff, data_config[dataset])
@@ -734,48 +694,49 @@ def interpretability(filename, dataset, max_iter, k, f_accuracy, f_time, f_trees
                 if n_label != basic_label:
                     # print("-->label != n_label")
                     # print("-->final label:", label, n_label)
-                    # ci_num += 1
-                    # if get_CI == False:
-                    # final_itr_num = itr_num
-                    # get_CI = True
+                    ci_num += 1
+                    if get_CI == False:
+                        final_itr_num = itr_num
+                    get_CI = True
                     r = True
-
-                    end_time = time.clock()
-                    time_pert.append(end_time - start_time)
-
                     break
                     # return True
-            if r == True:
-                break
         # return False
-        # print(r, ci_num, seed_num, final_itr_num)
-        # return r, ci_num, seed_num, final_itr_num
-        return r
-
-    def get_DT():
-        all_DT_trees = []
-        with open(f_trees, 'r') as f:
-            for line in f:
-                all_DT_trees.append(line.split("\n")[0])
-        return all_DT_trees
+        print(r, ci_num, seed_num, final_itr_num)
+        return r, ci_num, seed_num, final_itr_num
 
     all_feature_set = list(range(1, data_config[dataset].params + 1))
     cluster_num = 4
     params = data_config[dataset].params
-    max_depth = k
+    max_depth = 2
     min_size = 10
     feature_sets = list(itertools.combinations(all_feature_set, k))
     print(feature_sets)
 
+    # reverse
+    # feature_sets = sorted(feature_sets, reverse=True)
+    # feature_sets.reverse()
+    # print(feature_sets)
+
+    # set feature_Set
+    # feature_sets = [[2, 3, 13], [4, 5, 9]]
+    # feature_sets = [[1, 2, 3]]
+
+    # decision_tree_file = "../result_file/k=3/DT_trees"
+    #
+    # all_DT_trees = []
+    # with open(decision_tree_file, 'r') as f:
+    #     for line in f:
+    #         all_DT_trees.append(line.split("\n")[0])
+    # print("-->decision_tree_list:", all_DT_trees)
+
+
+    # reverse
+    # all_DT_trees.reverse()
+    # all_DT_trees = sorted(all_DT_trees, reverse=True)
+
     DT_file_index = 0
     scores = []
-    all_time_pert = []
-    all_time = []
-    build_tree_time = []
-
-    # get decision tree
-    # all_DT_trees = get_DT()
-
     for feature_set in feature_sets:
         print("-->feature_set", feature_set)
         # decision tree
@@ -788,20 +749,22 @@ def interpretability(filename, dataset, max_iter, k, f_accuracy, f_time, f_trees
         score, tree = decision_tree_accuracy(feature_set)
         end1 = time.clock()
         f_trees.write(str(tree) + "\n")
-        # f_time.write(str(end1 - start1) + "\n")
-        build_tree_time.append(end1 - start1)
+        f_time.write(str(end1 - start1) + " ")
 
-        start2 = time.clock()
         # perturbation
-        # print("-->tree:", tree)
+        print("-->tree:", tree)
         tree_conditions = []
         get_conditions(tree, result=tree_conditions, dir=-1, tmp=[])
-        # print("-->tree_condition:", tree_conditions)
+        print("-->tree_condition:", tree_conditions)
         # print(tree_conditions[15])
         all_result = []
+        all_general_result = []
         results = []
         number = 1
         feature_set = list(feature_set)
+        all_ci_num = 0
+        all_seed_num = 0
+        all_itr_num = 0
 
         limit = 1000
         clusters = get_cluster(dataset, cluster_num, feature_set)
@@ -811,30 +774,30 @@ def interpretability(filename, dataset, max_iter, k, f_accuracy, f_time, f_trees
         # set tree conditions
         # tree_conditions = [tree_conditions[6]]
 
-        time_pert = []
-        time_ci = []
+        start2 = time.clock()
         for condition in tree_conditions:
             print("sequence:", number, condition)
-
-            # start1 = time.clock()
-            # result, ci_num, seed_num, itr_num = perturbation(sess, preds, x, feature_set, condition, clusters, limit,
-            #             #                                                  original_dataset)
-            # result = perturbation(sess, preds, x, feature_set, condition, clusters, limit, original_dataset, time_pert)
-            result = train_ci(sess, preds, x, condition, clusters, limit, original_dataset, time_ci)
-            # end1 = time.clock()
-            # if result == True:
-            #     time_pert.append(end1-start1)
+            result, ci_num, seed_num, itr_num = perturbation(sess, preds, x, feature_set, condition, clusters, limit,
+                                                             original_dataset)
+            # sess, preds, x, feature_set, condition, clusters, limit
+            all_ci_num += ci_num
+            all_seed_num += seed_num
             results.append(result)
             print("-->result:", result)
-
             if result == True:
-                break
+                all_itr_num += itr_num
             number += 1
         all_result.append(results)
         true_num = results.count(True)
         print("-->results:", results)
-        # print("-->counter instance:", all_ci_num, all_seed_num, all_ci_num / float(all_seed_num))
-        # print("-->iteration num:", all_itr_num / float(true_num))
+        print("-->counter instance:", all_ci_num, all_seed_num, all_ci_num / float(all_seed_num))
+        print("-->iteration num:", all_itr_num / float(true_num))
+
+        # file 2 counter instance
+        f_ci.write(str(all_ci_num) + " " + str(all_seed_num) + " " + str(all_ci_num / float(all_seed_num)) + "\n")
+
+        # file 3 iteration num
+        f_iteration.write(str(all_itr_num / float(true_num)) + " " + str(true_num / float(tree_brench)) + "\n")
 
         if len(results) == len(tree_conditions):
             if not any(results):
@@ -843,80 +806,97 @@ def interpretability(filename, dataset, max_iter, k, f_accuracy, f_time, f_trees
                 print("-->interpretable!")
                 break
 
-        average_time = np.mean(time_pert)
-        all_time_pert.append(average_time)
-
         end2 = time.clock()
-        all_time.append(end2 - start2)
+        f_time.write(str(end2 - start2) + "\n")
 
-    # print("-->average perturbation time for one adversarial sample: ")
-    # print(np.mean(all_time_pert))
-    print("-->average time taken for one counter instance:")
-    print(np.mean(time_ci))
-    print("-->total time for find counter instances in trianing set")
-    print(sum(all_time))
-    print("-->average time for find counter instances in trianing set")
-    print(np.mean(all_time))
-    print("-->total time for accuracy")
-    print(sum(build_tree_time))
-    print("-->average time for accuracy for one feature_set")
-    print(np.mean(build_tree_time))
+    #     scores.append(score)
+    #     print("average_gini:", total_gini / float(count_gini))
+    #     average_gini = total_gini / float(count_gini)
+    #     f_gini.write(str(average_gini) + "\n")
+    #     global total_gini
+    #     total_gini = 0
+    #     global count_gini
+    #     count_gini = 0
+    # print("-->scores:", scores)
 
     return
 
 
+# dataset = load_csv(filename)
+# del dataset[0]
+# for i in range(len(dataset[0])):
+#     str_column_to_float(dataset, i)
+# print("-->dataset:", np.array(dataset))
+# print(np.array(dataset).shape)
+
+# dataset_name = "census"
+# data = {"census": census_data, "credit": credit_data, "bank": bank_data}
+# data_config = {"census": census, "credit": credit, "bank": bank}
+# X, Y, input_shape, nb_classes = data[dataset_name]()
+# config = tf.ConfigProto()
+# config.gpu_options.per_process_gpu_memory_fraction = 0.8
+# sess = tf.Session(config=config)
+# x = tf.placeholder(tf.float32, shape=input_shape)
+# y = tf.placeholder(tf.float32, shape=(None, nb_classes))
+# model = dnn(input_shape, nb_classes)
+# preds = model(x)
+# print("-->preds ", preds)
+# saver = tf.train.Saver()
+# saver.restore(sess, "../models/census/test.model")
+# grad_0 = gradient_graph(x, preds)
+# tfops = tf.sign(grad_0)
+
+# new_dataset = []
+# for d in dataset:
+#     del (d[-1])
+#     # d_plus = clip(np.array([d]), data_config[dataset_name]).astype("int")
+#     # d = d_plus[0]
+#     d = clip(d, data_config[dataset_name])
+#     d = list(np.array(d).astype("int"))
+#     print(d, type(d), type(d[0]))
+#     # d = np.array([d])
+#     probs = model_prediction(sess, x, preds, np.array([d]))[0]  # n_probs: prediction vector
+#     label = np.argmax(probs)  # GET index of max value in n_probs
+#     prob = probs[label]
+#     # d = np.array(d, label)
+#     d.append(label)
+#     print(d)
+#     new_dataset.append(d)
+#
+# print("-->dataset:", np.array(new_dataset))
+# print(np.array(new_dataset).shape)
+
+# original_dataset = new_dataset
+# dataset = "census"
+# model_path = "../models/census/test.model"
+
 total_gini = 0
 count_gini = 0
-dataset = "bank"
-filename = '../datasets/bank'
-directory = "../allinput2000/bank/k=3(all)/"
+filename = '../datasets/census'
 
-accuracy_input = directory + 'accuracy'
-time_consume = directory + 'time'
-DT_trees = directory + 'DT_trees'
+gini_input = '../result/census/k2(depth=k)/gini'
+accuracy_input = '../result/census/k2(depth=k)/accuracy'
+time_consume = '../result/census/k2(depth=k)/time'
+counter_instance = '../result/census/k2(depth=k)/CI_num'
+iteration_num = '../result/census/k2(depth=k)/iteration_num'
+DT_trees = '../result/census/k2(depth=k)/DT_trees'
 
+f_gini = open(gini_input, "w")
 f_accuracy = open(accuracy_input, "w")
 f_time = open(time_consume, "w")
+f_ci = open(counter_instance, "w")
+f_iteration = open(iteration_num, "w")
 f_trees = open(DT_trees, "w")
-
-size = os.path.getsize(accuracy_input)
-if size == 0:
-    f_accuracy.truncate()
-else:
-    print(accuracy_input + "not empty")
-
-size = os.path.getsize(time_consume)
-if size == 0:
-    f_time.truncate()
-else:
-    print(time_consume + "not empty")
-
-size = os.path.getsize(DT_trees)
-if size == 0:
-    f_trees.truncate()
-else:
-    print(DT_trees + "not empty")
-
+f_gini.truncate()
 f_accuracy.truncate()
 f_time.truncate()
+f_ci.truncate()
+f_iteration.truncate()
 f_trees.truncate()
 
-interpretability(filename, dataset, 10, 3, f_accuracy, f_time, f_trees)
-# dataset, max_iter, k, original_dataset, n_folds, x, preds
+dataset = "census"
 
-build_one_tree_time = []
-calculate_accuracy = []
-with open(time_consume, 'r') as f:
-    lines = f.readlines()  # 2
-    for line in lines:  # 3
-        value = [float(s) for s in line.split()]  # 2
-        build_one_tree_time.append(value[0])  # 5
-        calculate_accuracy.append(value[1])
-print("-->average time for build one decision tree")
-print(np.mean(build_one_tree_time))
-print("-->average time for calculate accuracy of one decision tree")
-print(np.mean(calculate_accuracy))
-
+interpretability(filename, dataset, 10, 2, 3, f_gini, f_accuracy, f_time, f_ci, f_iteration, f_trees)
 
 
 
