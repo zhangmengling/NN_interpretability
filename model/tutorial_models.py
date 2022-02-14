@@ -1,5 +1,5 @@
-from adf_model.network import *
-from adf_model.layer import *
+from model.network import *
+from model.layer import *
 
 def dnn(input_shape=(None, 13), nb_classes=2):
     """
