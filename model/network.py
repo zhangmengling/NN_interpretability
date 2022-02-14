@@ -1,5 +1,5 @@
-from adf_model.model import Model
-from adf_model.layer import *
+from model.model import Model
+from model.layer import *
 
 class MLP(Model):
     """
